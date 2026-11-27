@@ -1,37 +1,46 @@
-# Runtime FBX import and one-time cache
+# Runtime FBX import and first-run cache
 
-## Source asset inspected
+## Asset inspected
 
-The supplied Adventurer asset is a binary FBX 7.4 file (FBX version 7400), 8,259,852 bytes.
+The supplied Adventurer file is binary FBX 7.4 (version 7400), 8,259,852 bytes. Its take list includes CharacterArmature|Idle, Walk, Run, Death, HitRecieve, Sword_Slash, Wave, and other takes. The source FBX is not committed to this repository; place it at game:\\media\\Adventurer.fbx on the console.
 
-- SHA-256: `b3a28d7a6578e2039908b11d1516c98130f7b4f1a5553141be51349c8fc63bf3`
-- Intended runtime role: AI opponent only. The player remains first-person and does not render a player body.
+## Parser dependency
 
-The binary itself has **not** been committed by this change. The GitHub file-writing connector accepts UTF-8 files and Git blobs, but this session has no binary upload/LFS transfer path for the 8.3 MB source asset. Do not treat this metadata as the model file.
+The project pins ufbx as a Git submodule at vendor/ufbx. Initialize it with:
 
-## Required console boot flow
+    git submodule update --init --recursive
 
-The intended runtime contract is:
+ufbx is a portable C FBX loader that supports binary/ASCII FBX and compressed arrays. Compile vendor/ufbx/ufbx.c separately and add vendor/ufbx to the include path. Keep the upstream MIT license with the dependency.
 
-1. Look for `game:\media\cache\adventurer.x360m`.
-2. Validate a cache header containing a format version, source FBX SHA-256, and payload length.
-3. If the cache is valid, call `model_load_x360m` and do not parse FBX again.
-4. If the cache is absent or stale, read `game:\media\source\adventurer.fbx`, parse and convert it, write a temporary cache file, flush/close it, then rename it to `adventurer.x360m`.
-5. Load the finished cache. If conversion fails, report a useful error and do not overwrite a previously valid cache.
+**XDK warning:** ufbx is documented for C99/C++11 and mainstream modern toolchains. The legacy Xbox 360 XDK compiler is not in its tested compiler list. This integration has not been compiled with the proprietary XDK; compatibility work may be required.
 
-The source FBX should remain on the console so a cache can be rebuilt after a format-version change. A cache is only rebuilt when missing, invalid, or generated from a different source hash/version.
+## Current importer behavior
 
-## FBX 7.4 importer requirements
+src/fbx_import.c parses the FBX through ufbx, triangulates every mesh node, transforms geometry into world space, and writes an X360M v1 cache. It currently bakes the model as one rigid root bone and writes a single BindPose clip. It imports positions, normals and the first UV set. This is enough for a static model preview, not an animated character.
 
-A real on-console converter must parse the binary FBX node tree, decode little-endian scalar properties, inflate compressed array properties (Deflate/zlib), and resolve object connections. It must then convert:
+The current X360M v1 index field is 16-bit. The importer refuses files above 65,535 emitted vertices rather than truncating indices. It does not yet write the source hash into the cache, so remove the cache manually if the FBX changes.
 
-- Geometry: control points, polygon vertex indices, normals, UVs, triangulation, and material-independent mesh grouping.
-- Skinning: Skin/Cluster links, bone hierarchy, bind pose and inverse-bind matrices, and normalized top-four vertex influences.
-- Animation: animation stacks/layers, curve nodes and curves, key times/values, interpolation, and sampled local/global bone transforms.
-- Coordinate conversion: FBX axis system, units, handedness, and matrix conventions into the renderer's X360M convention.
+## Cache boot flow
 
-The parser must reject unsupported or malformed input with bounded allocations; it must not assume the file is trusted.
+Call before model_load_x360m():
 
-## Important status
+    if (!fbx_cache_ensure("game:\\media\\Adventurer.fbx",
+                          "game:\\media\\adventurer.x360m")) {
+        /* show import failure; do not load a partial model */
+    }
+    if (!model_load_x360m(&opponent_model,
+                          "game:\\media\\adventurer.x360m")) {
+        /* show cache load failure */
+    }
 
-This document defines the intended architecture, **not an implemented FBX importer**. The current renderer only loads the already-converted X360M format. The Blender exporter remains the working conversion route until the native FBX parser, zlib dependency, cache writer, and actual XDK build have been implemented and tested. Do not claim that direct FBX loading works on the Xbox 360 yet.
+A valid X360M cache header is reused; otherwise the FBX is parsed and the cache is generated. Delete adventurer.x360m to force a rebuild after replacing the FBX.
+
+## Not implemented yet
+
+- Skeletal hierarchy and inverse-bind conversion.
+- Sampling FBX animation stacks into X360M animation clips.
+- Camera-viewer application loop and actual draw integration.
+- Cache source hashing, atomic temporary-file replacement, and stale-cache detection.
+- Textures/materials, blend shapes, tangents, and multiple UV sets.
+
+The renderer in this branch is still source scaffolding. There is no verified XEX build or on-console display test. Do not treat the static importer as a finished animated-model pipeline.
