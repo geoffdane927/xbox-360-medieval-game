@@ -45,9 +45,9 @@ int fbx_convert_to_x360m(const char *fbx_path, const char *cache_path)
     scene=ufbx_load_file(fbx_path,&opts,&error);
     if(!scene || scene->meshes.count==0) goto done;
 
-    for(i=0;i<scene->meshes.count;i++) {
-        ufbx_mesh *m=scene->meshes.data[i];
-        total+=m->num_triangles*3;
+    for(i=0;i<scene->nodes.count;i++) {
+        ufbx_node *node=scene->nodes.data[i];
+        if(node->mesh) total+=node->mesh->num_triangles*3;
     }
     /* X360M v1 indices are uint16. Refuse overflow rather than corrupting. */
     if(!total || total>65535 || total>200000) goto done;
