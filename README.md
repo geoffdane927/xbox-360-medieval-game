@@ -48,3 +48,18 @@ The first renderer uses CPU skeletal skinning and uploads deformed vertices to a
 ## Current limitation
 
 The FBX itself is not in this repository, and the exporter output has not yet been validated against the actual Adventurer file. Put the converted `.x360m` file in the media path above. If you re-upload the FBX here, I can verify the action names and adjust the exporter against the actual asset.
+
+
+## Runtime FBX preview experiment
+
+The branch now includes a ufbx submodule and a first-pass runtime converter:
+
+- Run `git submodule update --init --recursive` to fetch ufbx.
+- Compile `vendor/ufbx/ufbx.c` and `src/fbx_import.c`.
+- Put the source asset at `game:\\media\\Adventurer.fbx`.
+- Call `fbx_cache_ensure()` to create/reuse `game:\\media\\adventurer.x360m`.
+- Load the cache through `model_load_x360m()`.
+
+The current converter imports all mesh nodes and bakes them into a rigid bind-pose preview. It does **not** yet preserve the skeleton or animations. The Xbox controller camera helper is in `examples/fbx_viewer_camera.c`.
+
+This is not yet a runnable viewer or a verified XEX. The repository still needs a complete engine header, app entry point, renderer initialization/draw integration, and an XDK compatibility/build test. See `docs/FBX_RUNTIME_IMPORT.md` and `examples/README.md` for exact scope and limitations.
